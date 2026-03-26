@@ -5,7 +5,6 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QUrl>
-#include <QUrlQuery>
 
 TelegramApiClient::TelegramApiClient(QObject *parent)
     : QObject(parent)
@@ -34,7 +33,7 @@ QNetworkReply *TelegramApiClient::getUpdates(int offset, int timeout)
 
 QNetworkReply *TelegramApiClient::sendMessage(qint64 chatId,
                                                const QString &text,
-                                               const QString &replyMarkup)
+                                               const QJsonObject &replyMarkup)
 {
     QJsonObject params;
     params["chat_id"]    = chatId;
@@ -54,7 +53,7 @@ QNetworkReply *TelegramApiClient::sendMessageWithInlineKeyboard(
     params["chat_id"]      = chatId;
     params["text"]         = text;
     params["parse_mode"]   = "HTML";
-    params["reply_markup"] = buildInlineKeyboardJson(buttons);
+    params["reply_markup"] = buildInlineKeyboardMarkup(buttons);
     return post("sendMessage", params);
 }
 
@@ -115,7 +114,32 @@ QNetworkReply *TelegramApiClient::sendToChannel(const QString &channelId,
     return post("sendMessage", params);
 }
 
-// ---------- private helpers ----------
+// ---------- static helper ----------
+
+QJsonObject TelegramApiClient::buildInlineKeyboardMarkup(
+    const QVector<QVector<QPair<QString,QString>>> &buttons)
+{
+    QJsonArray rows;
+    for (const auto &row : buttons) {
+        QJsonArray rowArr;
+        for (const auto &btn : row) {
+            QJsonObject b;
+            b["text"] = btn.first;
+            const QString &data = btn.second;
+            if (data.startsWith("http://") || data.startsWith("https://"))
+                b["url"] = data;
+            else
+                b["callback_data"] = data;
+            rowArr.append(b);
+        }
+        rows.append(rowArr);
+    }
+    QJsonObject markup;
+    markup["inline_keyboard"] = rows;
+    return markup;
+}
+
+// ---------- private ----------
 
 QNetworkReply *TelegramApiClient::post(const QString &method,
                                         const QJsonObject &params)
@@ -127,28 +151,4 @@ QNetworkReply *TelegramApiClient::post(const QString &method,
     QNetworkReply *reply = m_nam->post(req, QJsonDocument(params).toJson(QJsonDocument::Compact));
     connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
     return reply;
-}
-
-QString TelegramApiClient::buildInlineKeyboardJson(
-    const QVector<QVector<QPair<QString,QString>>> &buttons)
-{
-    QJsonArray rows;
-    for (const auto &row : buttons) {
-        QJsonArray rowArr;
-        for (const auto &btn : row) {
-            QJsonObject b;
-            b["text"] = btn.first;
-            const QString &data = btn.second;
-            // Detect URL buttons (start with http:// or https://)
-            if (data.startsWith("http://") || data.startsWith("https://"))
-                b["url"] = data;
-            else
-                b["callback_data"] = data;
-            rowArr.append(b);
-        }
-        rows.append(rowArr);
-    }
-    QJsonObject markup;
-    markup["inline_keyboard"] = rows;
-    return QString::fromUtf8(QJsonDocument(markup).toJson(QJsonDocument::Compact));
 }

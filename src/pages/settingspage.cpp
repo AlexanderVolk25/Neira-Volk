@@ -70,7 +70,7 @@ void SettingsPage::showEvent(QShowEvent *event)
 void SettingsPage::loadValues()
 {
     m_tokenEdit->setText(m_config->botToken());
-    m_adminIdEdit->setText(QString::number(m_config->adminId() == 0 ? 0 : m_config->adminId()));
+    m_adminIdEdit->setText(QString::number(m_config->adminId()));
     m_supportEdit->setText(m_config->supportUsername());
     m_channelEdit->setText(m_config->channelUsername());
     m_autoPayCheck->setChecked(m_config->showAutoPayment());

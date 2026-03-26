@@ -240,7 +240,6 @@ void BotEngine::handleStart(qint64 chatId, qint64 userId,
     QString msg = m_config->welcomeMsg();
     emit logMessage(QString("👤 /start от %1 (id=%2)").arg(name).arg(userId));
 
-    // Send welcome + main menu keyboard
     QJsonObject replyMarkup;
     QJsonArray keyboard;
     QJsonArray row1, row2;
@@ -254,16 +253,7 @@ void BotEngine::handleStart(qint64 chatId, qint64 userId,
     replyMarkup["resize_keyboard"]   = true;
     replyMarkup["one_time_keyboard"] = false;
 
-    QJsonObject params;
-    params["chat_id"]      = chatId;
-    params["text"]         = msg;
-    params["parse_mode"]   = "HTML";
-    params["reply_markup"] = QString::fromUtf8(
-        QJsonDocument(replyMarkup).toJson(QJsonDocument::Compact));
-
-    // Use sendMessage directly via the API
-    m_api.sendMessage(chatId, msg,
-        QString::fromUtf8(QJsonDocument(replyMarkup).toJson(QJsonDocument::Compact)));
+    m_api.sendMessage(chatId, msg, replyMarkup);
 }
 
 void BotEngine::sendMainMenu(qint64 chatId)
@@ -280,8 +270,7 @@ void BotEngine::sendMainMenu(qint64 chatId)
     replyMarkup["keyboard"]        = keyboard;
     replyMarkup["resize_keyboard"] = true;
 
-    m_api.sendMessage(chatId, "Выберите действие:",
-        QString::fromUtf8(QJsonDocument(replyMarkup).toJson(QJsonDocument::Compact)));
+    m_api.sendMessage(chatId, "Выберите действие:", replyMarkup);
 }
 
 void BotEngine::handleTariffs(qint64 chatId)
@@ -321,13 +310,10 @@ void BotEngine::handleSupport(qint64 chatId)
 {
     const QString sup = m_config->supportUsername();
     if (!sup.isEmpty()) {
-        QString handle = sup.startsWith("@") ? sup : "@" + sup;
-        m_api.sendMessage(chatId,
-            QString("💬 Служба поддержки: %1").arg(handle));
+        const QString handle = sup.startsWith("@") ? sup : "@" + sup;
+        m_api.sendMessage(chatId, QString("💬 Служба поддержки: %1").arg(handle));
     } else {
-        m_api.sendMessage(chatId,
-            QString("💬 Обратитесь к администратору: @%1")
-                .arg(m_config->supportUsername().isEmpty() ? "admin" : m_config->supportUsername()));
+        m_api.sendMessage(chatId, "💬 Поддержка не настроена. Обратитесь к @admin.");
     }
 }
 

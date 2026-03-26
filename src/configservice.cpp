@@ -126,7 +126,7 @@ void ConfigService::save()
 {
     QJsonObject root;
     root["botToken"]        = m_botToken;
-    root["adminId"]         = QString::number(m_adminId);
+    root["adminId"]         = m_adminId;
     root["supportUsername"] = m_supportUsername;
     root["channelUsername"] = m_channelUsername;
     root["showAutoPayment"] = m_showAutoPayment;

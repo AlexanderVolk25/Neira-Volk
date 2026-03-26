@@ -4,6 +4,9 @@
 #include <QString>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
+#include <QJsonObject>
+#include <QVector>
+#include <QPair>
 
 class TelegramApiClient : public QObject
 {
@@ -15,7 +18,7 @@ public:
 
     QNetworkReply *getUpdates(int offset, int timeout = 25);
     QNetworkReply *sendMessage(qint64 chatId, const QString &text,
-                               const QString &replyMarkup = QString());
+                               const QJsonObject &replyMarkup = QJsonObject());
     QNetworkReply *sendMessageWithInlineKeyboard(
         qint64 chatId,
         const QString &text,
@@ -29,14 +32,14 @@ public:
                                        const QString &text = QString());
     QNetworkReply *sendToChannel(const QString &channelId, const QString &text);
 
+    static QJsonObject buildInlineKeyboardMarkup(
+        const QVector<QVector<QPair<QString,QString>>> &buttons);
+
 signals:
     void networkError(const QString &errorText);
 
 private:
     QNetworkReply *post(const QString &method, const QJsonObject &params);
-    QNetworkReply *get(const QString &method, const QJsonObject &params);
-    QString buildInlineKeyboardJson(
-        const QVector<QVector<QPair<QString,QString>>> &buttons);
 
     QNetworkAccessManager *m_nam;
     QString m_token;

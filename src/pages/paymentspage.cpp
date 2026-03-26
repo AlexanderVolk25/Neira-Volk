@@ -132,9 +132,12 @@ void PaymentsPage::saveProviders()
             QCheckBox *cb = cbWidget->findChild<QCheckBox*>();
             if (cb) providers[row].enabled = cb->isChecked();
         }
-        if (m_provTable->item(row, 2))
-            providers[row].apiKey = providers[row].terminalKey =
-                m_provTable->item(row, 2)->text().trimmed();
+        if (m_provTable->item(row, 2)) {
+            // API Key and Terminal Key share the same UI column; save to both fields
+            const QString keyValue = m_provTable->item(row, 2)->text().trimmed();
+            providers[row].apiKey      = keyValue;
+            providers[row].terminalKey = keyValue;
+        }
         if (m_provTable->item(row, 3))
             providers[row].password = m_provTable->item(row, 3)->text().trimmed();
     }

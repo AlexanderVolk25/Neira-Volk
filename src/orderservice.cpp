@@ -159,7 +159,10 @@ bool OrderService::setProxyData(int orderId, const QString &proxyData)
 QList<Order> OrderService::getAllOrders()
 {
     QSqlQuery q(m_db);
-    q.exec("SELECT * FROM orders ORDER BY id DESC");
+    if (!q.exec("SELECT * FROM orders ORDER BY id DESC")) {
+        qWarning() << "OrderService: getAllOrders failed:" << q.lastError().text();
+        return {};
+    }
     QList<Order> list;
     while (q.next())
         list.append(orderFromQuery(q));
@@ -171,7 +174,10 @@ QList<Order> OrderService::getOrdersByStatus(const QString &status)
     QSqlQuery q(m_db);
     q.prepare("SELECT * FROM orders WHERE status=? ORDER BY id DESC");
     q.addBindValue(status);
-    q.exec();
+    if (!q.exec()) {
+        qWarning() << "OrderService: getOrdersByStatus failed:" << q.lastError().text();
+        return {};
+    }
     QList<Order> list;
     while (q.next())
         list.append(orderFromQuery(q));
