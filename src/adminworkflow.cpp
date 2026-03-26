@@ -1,26 +1,22 @@
 #include "adminworkflow.h"
 
-AdminWorkflow::AdminWorkflow(QObject *parent)
-    : QObject(parent)
-{
-}
-
-void AdminWorkflow::setPendingReply(qint64 adminChatId, int orderId)
+void AdminWorkflow::setPendingReply(int64_t adminChatId, int orderId)
 {
     m_pending[adminChatId] = orderId;
 }
 
-bool AdminWorkflow::hasPendingReply(qint64 adminChatId) const
+bool AdminWorkflow::hasPendingReply(int64_t adminChatId) const
 {
-    return m_pending.contains(adminChatId);
+    return m_pending.count(adminChatId) > 0;
 }
 
-int AdminWorkflow::getPendingOrderId(qint64 adminChatId) const
+int AdminWorkflow::getPendingOrderId(int64_t adminChatId) const
 {
-    return m_pending.value(adminChatId, -1);
+    auto it = m_pending.find(adminChatId);
+    return it != m_pending.end() ? it->second : -1;
 }
 
-void AdminWorkflow::clearPendingReply(qint64 adminChatId)
+void AdminWorkflow::clearPendingReply(int64_t adminChatId)
 {
-    m_pending.remove(adminChatId);
+    m_pending.erase(adminChatId);
 }

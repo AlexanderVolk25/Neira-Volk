@@ -1,35 +1,17 @@
 #pragma once
+#include "../utils.h"
+#include "../configservice.h"
+#include "../botengine.h"
 
-#include <QWidget>
-#include <QLabel>
-#include <QPushButton>
-#include <QPlainTextEdit>
+#define IDC_DASH_STATUS_DOT    3001
+#define IDC_DASH_STATUS_LABEL  3002
+#define IDC_DASH_STARTSTOP     3003
+#define IDC_DASH_CLEAR         3004
+#define IDC_DASH_LOG           3005
 
-#include "configservice.h"
-#include "botengine.h"
-
-class DashboardPage : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit DashboardPage(ConfigService *config, BotEngine *engine,
-                           QWidget *parent = nullptr);
-
-public slots:
-    void appendLog(const QString &text);
-
-private slots:
-    void onStartStop();
-    void clearLogs();
-
-private:
-    void updateStatus(bool running);
-
-    ConfigService   *m_config;
-    BotEngine       *m_engine;
-
-    QLabel          *m_statusDot;
-    QLabel          *m_statusLabel;
-    QPushButton     *m_startStopBtn;
-    QPlainTextEdit  *m_logView;
-};
+namespace DashboardPage {
+    bool registerClass(HINSTANCE hInst);
+    HWND create(HWND parent, const RECT& rc,
+                ConfigService* config, BotEngine* engine);
+    void appendLog(HWND hwnd, const std::string& text);
+}

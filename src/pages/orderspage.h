@@ -1,23 +1,13 @@
 #pragma once
+#include "../utils.h"
+#include "../orderservice.h"
 
-#include <QWidget>
-#include <QTableWidget>
-#include <QComboBox>
-#include "orderservice.h"
+#define IDC_ORDERS_FILTER  3601
+#define IDC_ORDERS_LIST    3602
+#define IDC_ORDERS_REFRESH 3603
 
-class OrdersPage : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit OrdersPage(OrderService *orders, QWidget *parent = nullptr);
-
-public slots:
-    void refresh();
-
-private:
-    void loadOrders(const QString &statusFilter = "all");
-
-    OrderService   *m_orders;
-    QTableWidget   *m_table;
-    QComboBox      *m_filterCombo;
-};
+namespace OrdersPage {
+    bool registerClass(HINSTANCE hInst);
+    HWND create(HWND parent, const RECT& rc, OrderService* orders);
+    void refresh(HWND hwnd, OrderService* orders);
+}

@@ -1,56 +1,61 @@
 #pragma once
 
-#include <QObject>
-#include <QSqlDatabase>
-#include <QSqlQuery>
-#include <QString>
+#include <string>
+#include <vector>
+#include <cstdint>
 
 struct Order {
-    int     id           = 0;
-    qint64  userId       = 0;
-    QString username;
-    QString planName;
-    int     planPrice    = 0;
-    QString status;       // pending / confirmed / rejected / delivered
-    QString createdAt;
-    QString updatedAt;
-    int     adminMsgId   = 0;
-    qint64  chatId       = 0;
-    QString receiptFileId;
-    QString proxyData;
+    int         id            = 0;
+    int64_t     userId        = 0;
+    std::string username;
+    std::string planName;
+    int         planPrice     = 0;
+    std::string status;       // pending / confirmed / rejected / delivered
+    std::string createdAt;
+    std::string updatedAt;
+    int         adminMsgId    = 0;
+    int64_t     chatId        = 0;
+    std::string receiptFileId;
+    std::string proxyData;
 };
 
 struct User {
-    qint64  id        = 0;
-    QString username;
-    QString firstName;
-    QString lastSeen;
+    int64_t     id        = 0;
+    std::string username;
+    std::string firstName;
+    std::string lastSeen;
 };
 
-class OrderService : public QObject
+// Forward declarations to avoid including sqlite3.h in headers
+struct sqlite3;
+struct sqlite3_stmt;
+
+class OrderService
 {
-    Q_OBJECT
 public:
-    explicit OrderService(QObject *parent = nullptr);
+    OrderService();
+    ~OrderService();
 
     bool init();
 
-    int     createOrder(qint64 userId, const QString &username, qint64 chatId,
-                        const QString &planName, int planPrice);
-    Order   getOrder(int orderId);
-    bool    updateOrderStatus(int orderId, const QString &status);
-    bool    setAdminMsgId(int orderId, int msgId);
-    bool    setReceiptFileId(int orderId, const QString &fileId);
-    bool    setProxyData(int orderId, const QString &proxyData);
-    QList<Order> getAllOrders();
-    QList<Order> getOrdersByStatus(const QString &status);
+    int              createOrder(int64_t userId, const std::string& username,
+                                 int64_t chatId, const std::string& planName,
+                                 int planPrice);
+    Order            getOrder(int orderId);
+    bool             updateOrderStatus(int orderId, const std::string& status);
+    bool             setAdminMsgId(int orderId, int msgId);
+    bool             setReceiptFileId(int orderId, const std::string& fileId);
+    bool             setProxyData(int orderId, const std::string& proxyData);
+    std::vector<Order> getAllOrders();
+    std::vector<Order> getOrdersByStatus(const std::string& status);
 
-    void    upsertUser(qint64 id, const QString &username, const QString &firstName);
-    User    getUser(qint64 id);
+    void             upsertUser(int64_t id, const std::string& username,
+                                const std::string& firstName);
+    User             getUser(int64_t id);
 
 private:
-    bool createTables();
-    Order orderFromQuery(QSqlQuery &q);
+    bool  createTables();
+    Order orderFromStmt(sqlite3_stmt* stmt);
 
-    QSqlDatabase m_db;
+    sqlite3* m_db = nullptr;
 };

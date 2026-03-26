@@ -1,52 +1,66 @@
 #pragma once
 
-#include <QMainWindow>
-#include <QStackedWidget>
-#include <QPushButton>
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QWidget>
-
+#include "utils.h"
 #include "configservice.h"
 #include "botengine.h"
 #include "orderservice.h"
 
-class DashboardPage;
-class SettingsPage;
-class PlansPage;
-class PaymentsPage;
-class MessagesPage;
-class ChannelPage;
-class OrdersPage;
+// Sidebar button IDs
+#define ID_NAV_DASHBOARD  2001
+#define ID_NAV_SETTINGS   2002
+#define ID_NAV_PLANS      2003
+#define ID_NAV_PAYMENTS   2004
+#define ID_NAV_MESSAGES   2005
+#define ID_NAV_CHANNEL    2006
+#define ID_NAV_ORDERS     2007
 
-class MainWindow : public QMainWindow
+// Page indices (must match button IDs - 2001)
+enum PageIndex {
+    PAGE_DASHBOARD = 0,
+    PAGE_SETTINGS,
+    PAGE_PLANS,
+    PAGE_PAYMENTS,
+    PAGE_MESSAGES,
+    PAGE_CHANNEL,
+    PAGE_ORDERS,
+    PAGE_COUNT
+};
+
+// Forward declare page window registration functions
+bool registerPageClasses(HINSTANCE hInst);
+
+class MainWindow
 {
-    Q_OBJECT
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
-    ~MainWindow() override;
+    MainWindow(HINSTANCE hInst, ConfigService* config,
+               BotEngine* engine, OrderService* orders);
+    ~MainWindow();
+
+    bool create();
+    HWND hwnd() const { return m_hwnd; }
+
+    static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp);
 
 private:
-    void setupUi();
-    void setupServices();
-    QPushButton *makeNavButton(const QString &label, int index);
+    void onCreate();
+    void onSize(int w, int h);
     void switchPage(int index);
+    void createSidebar(HWND parent, int sidebarW, int h);
+    void setSidebarButtonActive(int index);
 
-    ConfigService  *m_config;
-    OrderService   *m_orders;
-    BotEngine      *m_engine;
+    HINSTANCE     m_hInst;
+    HWND          m_hwnd = nullptr;
 
-    QWidget        *m_sidebar;
-    QStackedWidget *m_stack;
+    ConfigService* m_config;
+    BotEngine*     m_engine;
+    OrderService*  m_orders;
 
-    DashboardPage  *m_dashPage;
-    SettingsPage   *m_settingsPage;
-    PlansPage      *m_plansPage;
-    PaymentsPage   *m_paymentsPage;
-    MessagesPage   *m_messagesPage;
-    ChannelPage    *m_channelPage;
-    OrdersPage     *m_ordersPage;
+    HWND m_navButtons[PAGE_COUNT] = {};
+    HWND m_pages[PAGE_COUNT]      = {};
+    int  m_currentPage            = PAGE_DASHBOARD;
 
-    QList<QPushButton*> m_navButtons;
-    int m_currentPage = 0;
+    // Fonts & brushes for sidebar theming
+    HFONT  m_fontNormal  = nullptr;
+    HFONT  m_fontBold    = nullptr;
+    HBRUSH m_sidebarBrush = nullptr;
 };

@@ -8,137 +8,235 @@
 #include "pages/channelpage.h"
 #include "pages/orderspage.h"
 
-#include <QHBoxLayout>
-#include <QVBoxLayout>
-#include <QFrame>
-#include <QLabel>
+#include <commctrl.h>
+#pragma comment(lib, "comctl32.lib")
 
-MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent)
+static const wchar_t* kMainClassName = L"NeiraMainWindow";
+static const int SIDEBAR_W = 200;
+
+// ---- MainWindow implementation ----
+
+MainWindow::MainWindow(HINSTANCE hInst, ConfigService* config,
+                       BotEngine* engine, OrderService* orders)
+    : m_hInst(hInst), m_config(config), m_engine(engine), m_orders(orders)
 {
-    setWindowTitle("Neira Bot Panel");
-    resize(1100, 700);
-    setupServices();
-    setupUi();
+    m_fontNormal  = CreateFontW(-13, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    m_fontBold    = CreateFontW(-13, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    m_sidebarBrush = CreateSolidBrush(RGB(30, 35, 55));
 }
 
 MainWindow::~MainWindow()
 {
-    if (m_engine->isRunning())
-        m_engine->stop();
-    m_config->save();
+    if (m_fontNormal)   DeleteObject(m_fontNormal);
+    if (m_fontBold)     DeleteObject(m_fontBold);
+    if (m_sidebarBrush) DeleteObject(m_sidebarBrush);
 }
 
-void MainWindow::setupServices()
+bool MainWindow::create()
 {
-    m_config = new ConfigService(this);
-    m_config->load();
+    // Register window class
+    WNDCLASSEXW wc = {};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = WndProc;
+    wc.hInstance     = m_hInst;
+    wc.hIcon         = LoadIcon(nullptr, IDI_APPLICATION);
+    wc.hIconSm       = LoadIcon(nullptr, IDI_APPLICATION);
+    wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.lpszClassName = kMainClassName;
+    if (!RegisterClassExW(&wc)) return false;
 
-    m_orders = new OrderService(this);
-    m_orders->init();
-
-    m_engine = new BotEngine(m_config, m_orders, this);
+    m_hwnd = CreateWindowExW(0, kMainClassName, L"Neira Bot Panel",
+        WS_OVERLAPPEDWINDOW,
+        CW_USEDEFAULT, CW_USEDEFAULT, 1100, 700,
+        nullptr, nullptr, m_hInst, this);
+    return m_hwnd != nullptr;
 }
 
-void MainWindow::setupUi()
+LRESULT CALLBACK MainWindow::WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    QWidget *central = new QWidget(this);
-    setCentralWidget(central);
+    MainWindow* self = nullptr;
 
-    QHBoxLayout *mainLayout = new QHBoxLayout(central);
-    mainLayout->setContentsMargins(0, 0, 0, 0);
-    mainLayout->setSpacing(0);
+    if (msg == WM_NCCREATE) {
+        auto* cs = reinterpret_cast<CREATESTRUCTW*>(lp);
+        self = reinterpret_cast<MainWindow*>(cs->lpCreateParams);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
+        self->m_hwnd = hwnd;
+    } else {
+        self = reinterpret_cast<MainWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    }
 
-    // ---- Sidebar ----
-    m_sidebar = new QWidget(central);
-    m_sidebar->setFixedWidth(200);
-    m_sidebar->setObjectName("sidebar");
-    m_sidebar->setStyleSheet("QWidget#sidebar { background-color: #161927; }");
+    if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
 
-    QVBoxLayout *sideLayout = new QVBoxLayout(m_sidebar);
-    sideLayout->setContentsMargins(0, 0, 0, 0);
-    sideLayout->setSpacing(0);
+    switch (msg) {
+    case WM_CREATE:
+        self->onCreate();
+        return 0;
 
-    // Logo label
-    QLabel *logo = new QLabel("🤖 Neira Panel", m_sidebar);
-    logo->setAlignment(Qt::AlignCenter);
-    logo->setFixedHeight(60);
-    logo->setStyleSheet("font-size: 15px; font-weight: bold; color: #6ab0ff; "
-                        "background: #111320; border-bottom: 1px solid #2a3550;");
-    sideLayout->addWidget(logo);
+    case WM_SIZE:
+        self->onSize(LOWORD(lp), HIWORD(lp));
+        return 0;
 
-    struct NavEntry { QString label; };
-    QList<NavEntry> entries = {
-        {"📊  Dashboard"},
-        {"⚙️  Settings"},
-        {"📋  Plans"},
-        {"💳  Payments"},
-        {"💬  Messages"},
-        {"📢  Channel"},
-        {"📦  Orders"}
+    case WM_COMMAND: {
+        int id = LOWORD(wp);
+        if (id >= ID_NAV_DASHBOARD && id <= ID_NAV_ORDERS) {
+            self->switchPage(id - ID_NAV_DASHBOARD);
+        }
+        // Forward to current page
+        if (self->m_pages[self->m_currentPage])
+            SendMessageW(self->m_pages[self->m_currentPage], msg, wp, lp);
+        return 0;
+    }
+
+    case WM_USER_LOG: {
+        auto* text = reinterpret_cast<std::string*>(lp);
+        if (text) {
+            DashboardPage::appendLog(self->m_pages[PAGE_DASHBOARD], *text);
+            delete text;
+        }
+        return 0;
+    }
+
+    case WM_USER_ORDER_UPDATED:
+        if (self->m_pages[PAGE_ORDERS])
+            OrdersPage::refresh(self->m_pages[PAGE_ORDERS], self->m_orders);
+        return 0;
+
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN: {
+        HWND ctrl = reinterpret_cast<HWND>(lp);
+        // Colour sidebar nav buttons
+        for (int i = 0; i < PAGE_COUNT; ++i) {
+            if (ctrl == self->m_navButtons[i]) {
+                HDC hdc = reinterpret_cast<HDC>(wp);
+                SetTextColor(hdc, RGB(200, 210, 230));
+                SetBkColor(hdc, RGB(30, 35, 55));
+                return reinterpret_cast<LRESULT>(self->m_sidebarBrush);
+            }
+        }
+        break;
+    }
+
+    case WM_DESTROY:
+        if (self->m_engine->isRunning())
+            self->m_engine->stop();
+        self->m_config->save();
+        PostQuitMessage(0);
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+void MainWindow::onCreate()
+{
+    RECT rc;
+    GetClientRect(m_hwnd, &rc);
+    int w = rc.right, h = rc.bottom;
+
+    createSidebar(m_hwnd, SIDEBAR_W, h);
+
+    // Content area
+    RECT pageRc = { SIDEBAR_W + 1, 0, w, h };
+
+    m_pages[PAGE_DASHBOARD] = DashboardPage::create(m_hwnd, pageRc, m_config, m_engine);
+    m_pages[PAGE_SETTINGS]  = SettingsPage::create(m_hwnd, pageRc, m_config);
+    m_pages[PAGE_PLANS]     = PlansPage::create(m_hwnd, pageRc, m_config);
+    m_pages[PAGE_PAYMENTS]  = PaymentsPage::create(m_hwnd, pageRc, m_config);
+    m_pages[PAGE_MESSAGES]  = MessagesPage::create(m_hwnd, pageRc, m_config);
+    m_pages[PAGE_CHANNEL]   = ChannelPage::create(m_hwnd, pageRc, m_config, m_engine);
+    m_pages[PAGE_ORDERS]    = OrdersPage::create(m_hwnd, pageRc, m_orders);
+
+    // Wire orderUpdated callback
+    m_engine->onOrderUpdated = [this]() {
+        PostMessageW(m_hwnd, WM_USER_ORDER_UPDATED, 0, 0);
     };
 
-    for (int i = 0; i < entries.size(); ++i) {
-        QPushButton *btn = makeNavButton(entries[i].label, i);
-        sideLayout->addWidget(btn);
-        m_navButtons.append(btn);
-    }
-    sideLayout->addStretch();
-
-    mainLayout->addWidget(m_sidebar);
-
-    // ---- Separator ----
-    QFrame *sep = new QFrame(central);
-    sep->setFrameShape(QFrame::VLine);
-    sep->setFixedWidth(1);
-    sep->setStyleSheet("color: #2a3550;");
-    mainLayout->addWidget(sep);
-
-    // ---- Pages ----
-    m_stack = new QStackedWidget(central);
-
-    m_dashPage     = new DashboardPage(m_config, m_engine, this);
-    m_settingsPage = new SettingsPage(m_config, this);
-    m_plansPage    = new PlansPage(m_config, this);
-    m_paymentsPage = new PaymentsPage(m_config, this);
-    m_messagesPage = new MessagesPage(m_config, this);
-    m_channelPage  = new ChannelPage(m_config, m_engine, this);
-    m_ordersPage   = new OrdersPage(m_orders, this);
-
-    m_stack->addWidget(m_dashPage);
-    m_stack->addWidget(m_settingsPage);
-    m_stack->addWidget(m_plansPage);
-    m_stack->addWidget(m_paymentsPage);
-    m_stack->addWidget(m_messagesPage);
-    m_stack->addWidget(m_channelPage);
-    m_stack->addWidget(m_ordersPage);
-
-    mainLayout->addWidget(m_stack, 1);
-
-    // Connect orderUpdated -> refresh orders page
-    connect(m_engine, &BotEngine::orderUpdated,
-            m_ordersPage, &OrdersPage::refresh);
-
-    switchPage(0);
+    switchPage(PAGE_DASHBOARD);
 }
 
-QPushButton *MainWindow::makeNavButton(const QString &label, int index)
+void MainWindow::onSize(int w, int h)
 {
-    QPushButton *btn = new QPushButton(label, m_sidebar);
-    btn->setObjectName("navButton");
-    btn->setCheckable(true);
-    btn->setFixedHeight(46);
-    btn->setCursor(Qt::PointingHandCursor);
-    connect(btn, &QPushButton::clicked, this, [this, index]() {
-        switchPage(index);
-    });
-    return btn;
+    // Resize sidebar
+    if (HWND sidebar = FindWindowExW(m_hwnd, nullptr, L"STATIC", nullptr)) {
+        // We'll just reposition all nav buttons
+    }
+
+    int y = 60;
+    for (int i = 0; i < PAGE_COUNT; ++i) {
+        if (m_navButtons[i])
+            SetWindowPos(m_navButtons[i], nullptr, 0, y + i * 46, SIDEBAR_W, 46,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+
+    // Resize page area
+    RECT pageRc = { SIDEBAR_W + 1, 0, w, h };
+    for (int i = 0; i < PAGE_COUNT; ++i) {
+        if (m_pages[i])
+            SetWindowPos(m_pages[i], nullptr,
+                         pageRc.left, pageRc.top,
+                         pageRc.right - pageRc.left, pageRc.bottom - pageRc.top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+}
+
+void MainWindow::createSidebar(HWND parent, int sidebarW, int h)
+{
+    // Logo label
+    HWND logo = CreateWindowExW(0, L"STATIC", L"🤖 Neira Panel",
+        WS_CHILD | WS_VISIBLE | SS_CENTER,
+        0, 0, sidebarW, 55,
+        parent, nullptr, GetModuleHandleW(nullptr), nullptr);
+    SendMessageW(logo, WM_SETFONT, reinterpret_cast<WPARAM>(m_fontBold), TRUE);
+
+    // Separator line
+    CreateWindowExW(0, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | SS_ETCHEDHORZ,
+        0, 55, sidebarW, 2,
+        parent, nullptr, GetModuleHandleW(nullptr), nullptr);
+
+    struct NavEntry { UINT id; const char* label; };
+    NavEntry entries[PAGE_COUNT] = {
+        { ID_NAV_DASHBOARD, "📊  Dashboard"  },
+        { ID_NAV_SETTINGS,  "⚙️   Settings"  },
+        { ID_NAV_PLANS,     "📋  Plans"      },
+        { ID_NAV_PAYMENTS,  "💳  Payments"   },
+        { ID_NAV_MESSAGES,  "💬  Messages"   },
+        { ID_NAV_CHANNEL,   "📢  Channel"    },
+        { ID_NAV_ORDERS,    "��  Orders"     },
+    };
+
+    int y = 60;
+    for (int i = 0; i < PAGE_COUNT; ++i) {
+        m_navButtons[i] = createButton(parent, entries[i].label, entries[i].id,
+                                        0, y, sidebarW, 46);
+        SendMessageW(m_navButtons[i], WM_SETFONT,
+                     reinterpret_cast<WPARAM>(m_fontNormal), TRUE);
+        y += 46;
+    }
 }
 
 void MainWindow::switchPage(int index)
 {
-    for (int i = 0; i < m_navButtons.size(); ++i)
-        m_navButtons[i]->setChecked(i == index);
-    m_stack->setCurrentIndex(index);
+    for (int i = 0; i < PAGE_COUNT; ++i) {
+        if (m_pages[i])
+            ShowWindow(m_pages[i], i == index ? SW_SHOW : SW_HIDE);
+    }
     m_currentPage = index;
+    setSidebarButtonActive(index);
+
+    // Trigger onShow equivalent
+    if (m_pages[index])
+        SendMessageW(m_pages[index], WM_SHOWWINDOW, TRUE, SW_PARENTOPENING);
+}
+
+void MainWindow::setSidebarButtonActive(int index)
+{
+    for (int i = 0; i < PAGE_COUNT; ++i) {
+        if (m_navButtons[i])
+            EnableWindow(m_navButtons[i], i != index);
+    }
 }
