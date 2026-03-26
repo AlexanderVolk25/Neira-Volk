@@ -1,0 +1,10 @@
+build/
+CMakeCache.txt
+*.user
+moc_*
+*.pro.user
+config.json
+bot.db
+*.log
+CMakeFiles/
+cmake_install.cmake
