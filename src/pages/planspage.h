@@ -20,6 +20,7 @@ private slots:
 
 private:
     void loadPlans();
+    void setRowWidgets(int row, int typeIndex, int value);
 
     ConfigService  *m_config;
     QTableWidget   *m_table;

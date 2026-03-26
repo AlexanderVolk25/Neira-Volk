@@ -10,11 +10,6 @@ TelegramApiClient::TelegramApiClient(QObject *parent)
     : QObject(parent)
     , m_nam(new QNetworkAccessManager(this))
 {
-    connect(m_nam, &QNetworkAccessManager::finished, this,
-            [this](QNetworkReply *reply) {
-                if (reply->error() != QNetworkReply::NoError)
-                    emit networkError(reply->errorString());
-            });
 }
 
 void TelegramApiClient::setToken(const QString &token)

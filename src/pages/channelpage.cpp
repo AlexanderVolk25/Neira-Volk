@@ -96,13 +96,8 @@ void ChannelPage::publishPost()
     tempClient->setToken(m_config->botToken());
     QNetworkReply *reply = tempClient->sendToChannel(channel, text);
 
-    // Detach from deleteLater set in TelegramApiClient
-    disconnect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
-
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, tempClient]() {
-                reply->deleteLater();
-                tempClient->deleteLater();
                 if (reply->error() == QNetworkReply::NoError) {
                     m_statusLabel->setStyleSheet("color: #4caf50;");
                     m_statusLabel->setText("✅ Опубликовано успешно!");
@@ -111,5 +106,6 @@ void ChannelPage::publishPost()
                     m_statusLabel->setText(
                         QString("❌ Ошибка: %1").arg(reply->errorString()));
                 }
+                tempClient->deleteLater();
             });
 }

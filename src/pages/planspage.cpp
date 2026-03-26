@@ -60,6 +60,15 @@ void PlansPage::showEvent(QShowEvent *event)
     loadPlans();
 }
 
+void PlansPage::setRowWidgets(int row, int typeIndex, int value)
+{
+    QComboBox *typeCombo = new QComboBox(m_table);
+    typeCombo->addItems(DURATION_TYPES);
+    typeCombo->setCurrentIndex(typeIndex);
+    m_table->setCellWidget(row, 2, typeCombo);
+    m_table->setItem(row, 3, new QTableWidgetItem(QString::number(value)));
+}
+
 void PlansPage::loadPlans()
 {
     m_table->setRowCount(0);
@@ -70,22 +79,12 @@ void PlansPage::loadPlans()
         m_table->setItem(row, 0, new QTableWidgetItem(p.name));
         m_table->setItem(row, 1, new QTableWidgetItem(QString::number(p.price)));
 
-        QComboBox *typeCombo = new QComboBox(m_table);
-        typeCombo->addItems(DURATION_TYPES);
-        // Determine type
-        if (p.years > 0) {
-            typeCombo->setCurrentIndex(2);
-            m_table->setCellWidget(row, 2, typeCombo);
-            m_table->setItem(row, 3, new QTableWidgetItem(QString::number(p.years)));
-        } else if (p.months > 0) {
-            typeCombo->setCurrentIndex(1);
-            m_table->setCellWidget(row, 2, typeCombo);
-            m_table->setItem(row, 3, new QTableWidgetItem(QString::number(p.months)));
-        } else {
-            typeCombo->setCurrentIndex(0);
-            m_table->setCellWidget(row, 2, typeCombo);
-            m_table->setItem(row, 3, new QTableWidgetItem(QString::number(p.days)));
-        }
+        if (p.years > 0)
+            setRowWidgets(row, 2, p.years);
+        else if (p.months > 0)
+            setRowWidgets(row, 1, p.months);
+        else
+            setRowWidgets(row, 0, p.days > 0 ? p.days : 1);
     }
 }
 
@@ -95,10 +94,7 @@ void PlansPage::addRow()
     m_table->insertRow(row);
     m_table->setItem(row, 0, new QTableWidgetItem("Новый тариф"));
     m_table->setItem(row, 1, new QTableWidgetItem("100"));
-    QComboBox *typeCombo = new QComboBox(m_table);
-    typeCombo->addItems(DURATION_TYPES);
-    m_table->setCellWidget(row, 2, typeCombo);
-    m_table->setItem(row, 3, new QTableWidgetItem("1"));
+    setRowWidgets(row, 0, 1);
 }
 
 void PlansPage::removeRow()

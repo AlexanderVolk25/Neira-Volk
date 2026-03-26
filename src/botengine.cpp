@@ -14,6 +14,8 @@ static const char *K_ORDER_ID  = "orderId";
 static const char *K_CHAT_ID   = "chatId";
 static const char *K_USERNAME  = "username";
 
+static constexpr int MAX_RETRY_DELAY_MS = 60000;
+
 BotEngine::BotEngine(ConfigService *config, OrderService *orders, QObject *parent)
     : QObject(parent)
     , m_config(config)
@@ -55,9 +57,6 @@ void BotEngine::poll()
     QNetworkReply *reply = m_api.getUpdates(m_offset, 25);
     if (!reply) return;
 
-    // Disconnect deleteLater set in TelegramApiClient so we control lifetime here
-    disconnect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
-
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         reply->deleteLater();
         if (!m_running) return;
@@ -65,7 +64,7 @@ void BotEngine::poll()
         if (reply->error() != QNetworkReply::NoError) {
             emit logMessage(QString("⚠️ Ошибка сети: %1").arg(reply->errorString()));
             m_retryTimer.start(m_retryDelay);
-            m_retryDelay = qMin(m_retryDelay * 2, 60000);
+            m_retryDelay = qMin(m_retryDelay * 2, MAX_RETRY_DELAY_MS);
             return;
         }
 
@@ -486,11 +485,8 @@ void BotEngine::handleReceiptMessage(const QJsonObject &msg, qint64 chatId,
 
     // Send text notification with buttons
     QNetworkReply *notifReply = m_api.sendMessageWithInlineKeyboard(adminId, adminText, adminButtons);
-    // We need the message_id of admin notification to store it
-    // Use a lambda on a separate reply
-    disconnect(notifReply, &QNetworkReply::finished, notifReply, &QNetworkReply::deleteLater);
+    // Capture message_id from the response to store it for later reference
     connect(notifReply, &QNetworkReply::finished, this, [this, notifReply, orderId]() {
-        notifReply->deleteLater();
         QJsonParseError err;
         QJsonDocument doc = QJsonDocument::fromJson(notifReply->readAll(), &err);
         if (err.error == QJsonParseError::NoError && doc.isObject()) {

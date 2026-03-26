@@ -54,7 +54,7 @@ PaymentsPage::PaymentsPage(ConfigService *config, QWidget *parent)
 
     m_provTable = new QTableWidget(0, 5, autoGroup);
     m_provTable->setHorizontalHeaderLabels({
-        "Вкл.", "Провайдер", "API Key / Terminal Key", "Password", "Описание"});
+        "Вкл.", "Провайдер", "Ключ (API / Terminal Key)", "Пароль", "Описание"});
     m_provTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     m_provTable->setColumnWidth(0, 50);
     m_provTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
