@@ -1,9 +1,11 @@
 #pragma once
 
-#include <QObject>
-#include <QHash>
-#include <QVariantMap>
-#include <QTimer>
+#include <string>
+#include <thread>
+#include <atomic>
+#include <functional>
+#include <unordered_map>
+#include <cstdint>
 
 #include "configservice.h"
 #include "telegramapiclient.h"
@@ -19,76 +21,68 @@ enum class UserState {
     WaitingAdminReply
 };
 
-class BotEngine : public QObject
+struct UserContext {
+    UserState   state     = UserState::Idle;
+    int         orderId   = -1;
+    std::string username;
+    std::string firstName;
+};
+
+class BotEngine
 {
-    Q_OBJECT
 public:
-    explicit BotEngine(ConfigService *config,
-                       OrderService  *orders,
-                       QObject       *parent = nullptr);
+    BotEngine(ConfigService* config, OrderService* orders);
+    ~BotEngine();
 
     void start();
     void stop();
-    bool isRunning() const { return m_running; }
+    bool isRunning() const { return m_running.load(); }
 
-signals:
-    void logMessage(const QString &text);
-    void orderUpdated();
-
-private slots:
-    void poll();
+    // Callbacks for UI notifications (called from worker thread -> UI posts message)
+    std::function<void(const std::string&)> onLog;
+    std::function<void()>                   onOrderUpdated;
 
 private:
-    // Update dispatchers
-    void processUpdate(const QJsonObject &update);
-    void processMessage(const QJsonObject &msg);
-    void processCallbackQuery(const QJsonObject &cbq);
+    void runLoop();
+    void processUpdate(const nlohmann::json& update);
+    void processMessage(const nlohmann::json& msg);
+    void processCallbackQuery(const nlohmann::json& cbq);
 
-    // Command / flow handlers
-    void handleStart(qint64 chatId, qint64 userId, const QString &username,
-                     const QString &firstName);
-    void handleTariffs(qint64 chatId);
-    void handleBuy(qint64 chatId, qint64 userId);
-    void handleSetup(qint64 chatId);
-    void handleSupport(qint64 chatId);
+    void handleStart(int64_t chatId, int64_t userId,
+                     const std::string& username, const std::string& firstName);
+    void handleTariffs(int64_t chatId);
+    void handleBuy(int64_t chatId, int64_t userId);
+    void handleSetup(int64_t chatId);
+    void handleSupport(int64_t chatId);
+    void sendMainMenu(int64_t chatId);
 
-    void sendMainMenu(qint64 chatId);
+    void handlePlanSelection(int64_t chatId, int64_t userId,
+                              const std::string& username, int planIndex);
+    void handlePaymentMethodSelection(int64_t chatId, int64_t userId,
+                                      const std::string& choice);
+    void handleAutoBankSelection(int64_t chatId, const std::string& bank);
+    void handleReceiptMessage(const nlohmann::json& msg, int64_t chatId,
+                              int64_t userId);
 
-    // Plan / payment flow
-    void handlePlanSelection(qint64 chatId, qint64 userId,
-                              const QString &username, int planIndex);
-    void handlePaymentMethodSelection(qint64 chatId, qint64 userId,
-                                      const QString &choice);
-    void handleAutoBankSelection(qint64 chatId, const QString &bank);
-    void handleReceiptMessage(const QJsonObject &msg, qint64 chatId,
-                              qint64 userId);
+    void handleAdminCallback(int64_t adminChatId,
+                              const std::string& callbackQueryId,
+                              const std::string& data);
+    void handleAdminProxyReply(int64_t adminChatId, const std::string& text);
 
-    // Admin flow
-    void handleAdminCallback(qint64 adminChatId, const QString &callbackQueryId,
-                              const QString &data);
-    void handleAdminProxyReply(qint64 adminChatId, const QString &text);
+    UserContext& userCtx(int64_t userId);
+    std::string  buildPlansText() const;
+    std::string  displayName(const std::string& username,
+                              const std::string& firstName) const;
+    void         log(const std::string& text);
 
-    // User state helpers
-    UserState userState(qint64 userId) const;
-    void      setUserState(qint64 userId, UserState state);
-    QVariantMap &userCtx(qint64 userId);
+    ConfigService*   m_config;
+    OrderService*    m_orders;
+    AdminWorkflow    m_adminWorkflow;
+    TelegramApiClient m_api;
 
-    // Build plans text
-    QString buildPlansText() const;
+    std::thread      m_thread;
+    std::atomic<bool> m_running{false};
+    int               m_offset = 0;
 
-    // Misc
-    QString displayName(const QString &username, const QString &firstName) const;
-
-    ConfigService     *m_config;
-    OrderService      *m_orders;
-    AdminWorkflow      m_adminWorkflow;
-    TelegramApiClient  m_api;
-    QTimer             m_pollTimer;
-    QTimer             m_retryTimer;
-
-    bool m_running = false;
-    int  m_offset  = 0;
-    int  m_retryDelay = 5000;
-
-    QHash<qint64, QVariantMap> m_userCtx; // userId -> context map
+    std::unordered_map<int64_t, UserContext> m_userCtx;
 };

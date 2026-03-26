@@ -1,19 +1,16 @@
 #pragma once
 
-#include <QObject>
-#include <QHash>
+#include <unordered_map>
+#include <cstdint>
 
-class AdminWorkflow : public QObject
+class AdminWorkflow
 {
-    Q_OBJECT
 public:
-    explicit AdminWorkflow(QObject *parent = nullptr);
-
-    void setPendingReply(qint64 adminChatId, int orderId);
-    bool hasPendingReply(qint64 adminChatId) const;
-    int  getPendingOrderId(qint64 adminChatId) const;
-    void clearPendingReply(qint64 adminChatId);
+    void setPendingReply(int64_t adminChatId, int orderId);
+    bool hasPendingReply(int64_t adminChatId) const;
+    int  getPendingOrderId(int64_t adminChatId) const;
+    void clearPendingReply(int64_t adminChatId);
 
 private:
-    QHash<qint64, int> m_pending; // adminChatId -> orderId
+    std::unordered_map<int64_t, int> m_pending; // adminChatId -> orderId
 };

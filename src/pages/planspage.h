@@ -1,27 +1,14 @@
 #pragma once
+#include "../utils.h"
+#include "../configservice.h"
 
-#include <QWidget>
-#include <QTableWidget>
-#include "configservice.h"
+#define IDC_PLANS_LIST   3201
+#define IDC_PLANS_ADD    3202
+#define IDC_PLANS_REMOVE 3203
+#define IDC_PLANS_SAVE   3204
 
-class PlansPage : public QWidget
-{
-    Q_OBJECT
-public:
-    explicit PlansPage(ConfigService *config, QWidget *parent = nullptr);
-
-protected:
-    void showEvent(QShowEvent *event) override;
-
-private slots:
-    void addRow();
-    void removeRow();
-    void savePlans();
-
-private:
-    void loadPlans();
-    void setRowWidgets(int row, int typeIndex, int value);
-
-    ConfigService  *m_config;
-    QTableWidget   *m_table;
-};
+namespace PlansPage {
+    bool registerClass(HINSTANCE hInst);
+    HWND create(HWND parent, const RECT& rc, ConfigService* config);
+    void loadValues(HWND hwnd, ConfigService* config);
+}

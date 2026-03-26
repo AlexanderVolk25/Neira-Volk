@@ -1,50 +1,65 @@
 #include "telegramapiclient.h"
+#include "utils.h"
 
-#include <QNetworkRequest>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QJsonArray>
-#include <QUrl>
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
 
-TelegramApiClient::TelegramApiClient(QObject *parent)
-    : QObject(parent)
-    , m_nam(new QNetworkAccessManager(this))
+#include <string>
+#include <vector>
+
+TelegramApiClient::TelegramApiClient()
 {
+    m_hSession = WinHttpOpen(
+        L"NeiraBotPanel/1.0",
+        WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+        WINHTTP_NO_PROXY_NAME,
+        WINHTTP_NO_PROXY_BYPASS,
+        0);
 }
 
-void TelegramApiClient::setToken(const QString &token)
+TelegramApiClient::~TelegramApiClient()
 {
-    m_token   = token;
-    m_baseUrl = QString("https://api.telegram.org/bot%1/").arg(token);
+    if (m_hSession)
+        WinHttpCloseHandle(reinterpret_cast<HINTERNET>(m_hSession));
 }
 
-QNetworkReply *TelegramApiClient::getUpdates(int offset, int timeout)
+void TelegramApiClient::setToken(const std::string& token)
 {
-    QJsonObject params;
+    m_token = token;
+}
+
+// ---------- Public API methods ----------
+
+ApiResponse TelegramApiClient::getUpdates(int offset, int timeout)
+{
+    nlohmann::json params;
     params["offset"]  = offset;
     params["timeout"] = timeout;
     return post("getUpdates", params);
 }
 
-QNetworkReply *TelegramApiClient::sendMessage(qint64 chatId,
-                                               const QString &text,
-                                               const QJsonObject &replyMarkup)
+ApiResponse TelegramApiClient::sendMessage(int64_t chatId,
+                                            const std::string& text,
+                                            const nlohmann::json& replyMarkup)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["chat_id"]    = chatId;
     params["text"]       = text;
     params["parse_mode"] = "HTML";
-    if (!replyMarkup.isEmpty())
+    if (!replyMarkup.is_null() && !replyMarkup.empty())
         params["reply_markup"] = replyMarkup;
     return post("sendMessage", params);
 }
 
-QNetworkReply *TelegramApiClient::sendMessageWithInlineKeyboard(
-    qint64 chatId,
-    const QString &text,
-    const QVector<QVector<QPair<QString,QString>>> &buttons)
+ApiResponse TelegramApiClient::sendMessageWithInlineKeyboard(
+    int64_t chatId,
+    const std::string& text,
+    const std::vector<BtnRow>& buttons)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["chat_id"]      = chatId;
     params["text"]         = text;
     params["parse_mode"]   = "HTML";
@@ -52,98 +67,171 @@ QNetworkReply *TelegramApiClient::sendMessageWithInlineKeyboard(
     return post("sendMessage", params);
 }
 
-QNetworkReply *TelegramApiClient::sendPhoto(qint64 chatId,
-                                             const QString &fileId,
-                                             const QString &caption)
+ApiResponse TelegramApiClient::sendPhoto(int64_t chatId,
+                                          const std::string& fileId,
+                                          const std::string& caption)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["chat_id"]    = chatId;
     params["photo"]      = fileId;
     params["parse_mode"] = "HTML";
-    if (!caption.isEmpty())
-        params["caption"] = caption;
+    if (!caption.empty()) params["caption"] = caption;
     return post("sendPhoto", params);
 }
 
-QNetworkReply *TelegramApiClient::sendDocument(qint64 chatId,
-                                                const QString &fileId,
-                                                const QString &caption)
+ApiResponse TelegramApiClient::sendDocument(int64_t chatId,
+                                             const std::string& fileId,
+                                             const std::string& caption)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["chat_id"]    = chatId;
     params["document"]   = fileId;
     params["parse_mode"] = "HTML";
-    if (!caption.isEmpty())
-        params["caption"] = caption;
+    if (!caption.empty()) params["caption"] = caption;
     return post("sendDocument", params);
 }
 
-QNetworkReply *TelegramApiClient::forwardMessage(qint64 chatId,
-                                                  qint64 fromChatId,
-                                                  int messageId)
+ApiResponse TelegramApiClient::forwardMessage(int64_t chatId,
+                                               int64_t fromChatId,
+                                               int messageId)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["chat_id"]      = chatId;
     params["from_chat_id"] = fromChatId;
     params["message_id"]   = messageId;
     return post("forwardMessage", params);
 }
 
-QNetworkReply *TelegramApiClient::answerCallbackQuery(const QString &callbackQueryId,
-                                                       const QString &text)
+ApiResponse TelegramApiClient::answerCallbackQuery(const std::string& callbackQueryId,
+                                                    const std::string& text)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["callback_query_id"] = callbackQueryId;
-    if (!text.isEmpty())
-        params["text"] = text;
+    if (!text.empty()) params["text"] = text;
     return post("answerCallbackQuery", params);
 }
 
-QNetworkReply *TelegramApiClient::sendToChannel(const QString &channelId,
-                                                 const QString &text)
+ApiResponse TelegramApiClient::sendToChannel(const std::string& channelId,
+                                              const std::string& text)
 {
-    QJsonObject params;
+    nlohmann::json params;
     params["chat_id"]    = channelId;
     params["text"]       = text;
     params["parse_mode"] = "HTML";
     return post("sendMessage", params);
 }
 
-// ---------- static helper ----------
+// ---------- Static helper ----------
 
-QJsonObject TelegramApiClient::buildInlineKeyboardMarkup(
-    const QVector<QVector<QPair<QString,QString>>> &buttons)
+nlohmann::json TelegramApiClient::buildInlineKeyboardMarkup(
+    const std::vector<BtnRow>& buttons)
 {
-    QJsonArray rows;
-    for (const auto &row : buttons) {
-        QJsonArray rowArr;
-        for (const auto &btn : row) {
-            QJsonObject b;
+    nlohmann::json rows = nlohmann::json::array();
+    for (const auto& row : buttons) {
+        nlohmann::json rowArr = nlohmann::json::array();
+        for (const auto& btn : row) {
+            nlohmann::json b;
             b["text"] = btn.first;
-            const QString &data = btn.second;
-            if (data.startsWith("http://") || data.startsWith("https://"))
+            const std::string& data = btn.second;
+            if (startsWith(data, "http://") || startsWith(data, "https://"))
                 b["url"] = data;
             else
                 b["callback_data"] = data;
-            rowArr.append(b);
+            rowArr.push_back(b);
         }
-        rows.append(rowArr);
+        rows.push_back(rowArr);
     }
-    QJsonObject markup;
+    nlohmann::json markup;
     markup["inline_keyboard"] = rows;
     return markup;
 }
 
-// ---------- private ----------
+// ---------- Private HTTP post ----------
 
-QNetworkReply *TelegramApiClient::post(const QString &method,
-                                        const QJsonObject &params)
+ApiResponse TelegramApiClient::post(const std::string& method,
+                                     const nlohmann::json& params)
 {
-    QNetworkRequest req;
-    req.setUrl(QUrl(m_baseUrl + method));
-    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    ApiResponse resp;
+    if (m_token.empty()) { resp.raw = "No token set"; return resp; }
 
-    QNetworkReply *reply = m_nam->post(req, QJsonDocument(params).toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, reply, &QNetworkReply::deleteLater);
-    return reply;
+    HINTERNET hSession = reinterpret_cast<HINTERNET>(m_hSession);
+
+    // Connect to api.telegram.org (HTTPS, port 443)
+    HINTERNET hConnect = WinHttpConnect(hSession, L"api.telegram.org",
+                                        INTERNET_DEFAULT_HTTPS_PORT, 0);
+    if (!hConnect) { resp.raw = "WinHttpConnect failed"; return resp; }
+
+    // Build the URL path: /bot<TOKEN>/<METHOD>
+    std::wstring path = L"/bot" + toWide(m_token) + L"/" + toWide(method);
+
+    HINTERNET hRequest = WinHttpOpenRequest(
+        hConnect, L"POST", path.c_str(), nullptr,
+        WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
+        WINHTTP_FLAG_SECURE);
+    if (!hRequest) {
+        WinHttpCloseHandle(hConnect);
+        resp.raw = "WinHttpOpenRequest failed";
+        return resp;
+    }
+
+    // Set timeouts: (resolve, connect, send, receive) — getUpdates uses 25-sec long-poll
+    DWORD resolveTimeout  =  10000;
+    DWORD connectTimeout  =  15000;
+    DWORD sendTimeout     =  15000;
+    DWORD receiveTimeout  = (method == "getUpdates") ? 35000 : 20000;
+    WinHttpSetTimeouts(hRequest, resolveTimeout, connectTimeout,
+                       sendTimeout, receiveTimeout);
+
+    // Serialize body
+    std::string body = params.dump();
+    std::wstring contentType = L"Content-Type: application/json\r\n";
+
+    BOOL sent = WinHttpSendRequest(
+        hRequest,
+        contentType.c_str(), static_cast<DWORD>(-1L),
+        const_cast<char*>(body.c_str()), static_cast<DWORD>(body.size()),
+        static_cast<DWORD>(body.size()), 0);
+
+    if (!sent || !WinHttpReceiveResponse(hRequest, nullptr)) {
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        resp.raw = "Request failed";
+        return resp;
+    }
+
+    // Read HTTP status code
+    DWORD statusCode = 0;
+    DWORD statusLen  = sizeof(statusCode);
+    WinHttpQueryHeaders(hRequest,
+        WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+        WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusLen,
+        WINHTTP_NO_HEADER_INDEX);
+    resp.httpCode = static_cast<int>(statusCode);
+
+    // Read body
+    std::string responseBody;
+    DWORD available = 0;
+    while (WinHttpQueryDataAvailable(hRequest, &available) && available > 0) {
+        std::vector<char> buf(available + 1, 0);
+        DWORD read = 0;
+        if (WinHttpReadData(hRequest, buf.data(), available, &read))
+            responseBody.append(buf.data(), read);
+    }
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+
+    resp.raw = responseBody;
+
+    // Parse JSON
+    try {
+        auto doc = nlohmann::json::parse(responseBody);
+        resp.ok = doc.value("ok", false);
+        if (resp.ok && doc.contains("result"))
+            resp.result = doc["result"];
+    } catch (...) {
+        resp.ok = false;
+    }
+
+    return resp;
 }

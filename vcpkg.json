@@ -1,0 +1,8 @@
+{
+  "name": "neira-bot-panel",
+  "version-string": "1.0",
+  "dependencies": [
+    "nlohmann-json",
+    "sqlite3"
+  ]
+}

@@ -1,72 +1,105 @@
 # Neira Bot Panel
 
-A Telegram bot control panel built with Qt6 (C++), targeting Windows EXE.
+Панель управления Telegram-ботом для продажи подписок.  
+Собирается как **нативное Windows-приложение** с помощью **Visual Studio 2022** — без Qt.
 
-## Prerequisites
+---
 
-- Qt 6.4+ (with Widgets, Network, Sql modules)
-- CMake 3.21+
-- Visual Studio 2022 with MSVC (x64)
+## Стек технологий
 
-## Build Steps
+| Компонент | Используется |
+|-----------|-------------|
+| UI        | Win32 API (Common Controls) |
+| HTTP      | WinHTTP (Windows SDK, встроен) |
+| База данных | SQLite 3 через vcpkg |
+| JSON      | nlohmann/json через vcpkg |
+| Сборка    | Visual Studio 2022 (`.sln` + `.vcxproj`) |
 
-1. Clone the repository:
-   ```
-   git clone <repo-url>
-   cd Neira-Volk
-   ```
+---
 
-2. Configure and build:
-   ```
-   mkdir build
-   cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64
-   cmake --build . --config Release
-   ```
+## Требования
 
-3. Find the executable at `build/Release/NeiraBotPanel.exe`.
+- **Visual Studio 2022** с компонентом «Разработка классических приложений на C++»
+- **vcpkg** (менеджер пакетов C++) — для получения sqlite3 и nlohmann-json
 
-## Configuration
+---
 
-1. Launch `NeiraBotPanel.exe`.
-2. Open the **Settings** tab.
-3. Enter your **Bot Token** (from [@BotFather](https://t.me/BotFather)).
-4. Enter your **Admin Telegram ID** (numeric).
-5. (Optional) Set a support @username and channel username/ID.
-6. Click **Save**, then click **Start** on the Dashboard.
+## Установка зависимостей через vcpkg
 
-## Features
+```cmd
+# 1. Установить vcpkg (если ещё не установлен)
+git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+C:\vcpkg\bootstrap-vcpkg.bat
 
-- **Dashboard**: Start/stop bot, live log viewer.
-- **Settings**: Bot token, admin ID, support username, channel, auto-payment toggle.
-- **Plans**: Manage subscription plans (name, price, duration).
-- **Payments**: Configure manual payment link; auto-payment provider skeleton (T-Bank, Sber, Other).
-- **Messages**: Edit all bot message templates.
-- **Channel**: Publish posts to your Telegram channel.
-- **Orders**: View and filter all orders stored in SQLite.
+# 2. Интегрировать с Visual Studio (один раз)
+C:\vcpkg\vcpkg integrate install
 
-## Payment Modes
+# 3. Установить зависимости (или использовать автоустановку через vcpkg.json)
+C:\vcpkg\vcpkg install nlohmann-json:x64-windows sqlite3:x64-windows
 
-### Manual Payment
-One universal payment link (e.g. Tinkoff) where the user selects the amount.
-After paying, the user must send a receipt (photo or PDF).
-The admin reviews the receipt and confirms or rejects the order.
+# 4. Установить переменную окружения (если нужно)
+set VCPKG_ROOT=C:\vcpkg
+```
 
-### Auto Payment (skeleton)
-Bank selection submenu (T-Bank / Sber / Other) is a framework — no real API integration yet.
-Enable via the **Show Auto Payment** checkbox in Settings to expose the UI.
-Each provider has configurable API Key / Terminal Key / Password fields for future integration.
+Либо откройте решение в Visual Studio — оно автоматически обнаружит `vcpkg.json` и предложит установить зависимости.
 
-## Channel Integration
+---
 
-Add the bot as an admin of your channel and set the channel username/ID in Settings.
+## Сборка
 
-## Database
+1. Откройте `NeiraBotPanel.sln` в Visual Studio 2022
+2. Выберите конфигурацию **Release | x64**
+3. Соберите: **Build → Build Solution** (или `Ctrl+Shift+B`)
+4. Готовый EXE находится в `build\Release\NeiraBotPanel.exe`
 
-An SQLite database (`bot.db`) is created automatically next to the executable on first run.
+---
 
-## How to Get a Bot Token
+## Функционал
 
-1. Open Telegram and start a chat with [@BotFather](https://t.me/BotFather).
-2. Send `/newbot` and follow the prompts.
-3. Copy the token provided and paste it into the Settings tab.
+### Вкладки панели управления
+
+| Вкладка    | Описание |
+|------------|----------|
+| Dashboard  | Запуск/остановка бота, просмотр лога в реальном времени |
+| Settings   | Токен бота, ID администратора, поддержка, канал |
+| Plans      | Тарифные планы (название, цена, срок) |
+| Payments   | Ссылка для ручной оплаты; настройка автопровайдеров |
+| Messages   | Шаблоны всех сообщений бота |
+| Channel    | Публикация объявлений в Telegram-канал |
+| Orders     | Таблица заказов с фильтрацией по статусу |
+
+### Логика бота
+
+- **Long-polling** Telegram API (таймаут 25 с)
+- **Машина состояний** пользователя: `Idle → SelectingPlan → SelectingPaymentMethod → WaitingReceipt → Idle`
+- **Поток администратора**: чек → уведомление → подтвердить/отклонить → отправить данные доступа
+- **SQLite** база данных: `bot.db` (заказы и пользователи)
+- **Конфигурация**: `config.json` рядом с EXE
+
+---
+
+## Структура проекта
+
+```
+NeiraBotPanel.sln          Visual Studio Solution
+NeiraBotPanel.vcxproj      Visual Studio Project
+NeiraBotPanel.vcxproj.filters
+vcpkg.json                 Зависимости (nlohmann-json, sqlite3)
+src/
+├── main.cpp               WinMain — точка входа
+├── mainwindow.h/.cpp      Главное Win32-окно с боковой навигацией
+├── utils.h                Утилиты (UTF-8 ↔ WCHAR, создание контролов)
+├── configservice.h/.cpp   Чтение/запись config.json (nlohmann/json)
+├── orderservice.h/.cpp    SQLite3: заказы и пользователи
+├── telegramapiclient.h/.cpp  WinHTTP: Telegram Bot API
+├── botengine.h/.cpp       Логика бота (std::thread, машина состояний)
+├── adminworkflow.h/.cpp   Состояние подтверждения заказов администратором
+└── pages/
+    ├── dashboardpage.h/.cpp
+    ├── settingspage.h/.cpp
+    ├── planspage.h/.cpp
+    ├── paymentspage.h/.cpp
+    ├── messagespage.h/.cpp
+    ├── channelpage.h/.cpp
+    └── orderspage.h/.cpp
+```

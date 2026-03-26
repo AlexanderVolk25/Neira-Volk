@@ -1,148 +1,125 @@
 #include "paymentspage.h"
+#include <commctrl.h>
 
-#include <QVBoxLayout>
-#include <QHBoxLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QPushButton>
-#include <QTableWidgetItem>
-#include <QCheckBox>
-#include <QHeaderView>
-#include <QShowEvent>
-#include <QMessageBox>
+struct PayCtx { ConfigService* config; };
 
-PaymentsPage::PaymentsPage(ConfigService *config, QWidget *parent)
-    : QWidget(parent)
-    , m_config(config)
+static void initProvTable(HWND lv)
 {
-    QVBoxLayout *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 24, 24, 24);
-    root->setSpacing(16);
-
-    QLabel *title = new QLabel("💳 Payments", this);
-    title->setStyleSheet("font-size: 20px; font-weight: bold; color: #6ab0ff;");
-    root->addWidget(title);
-
-    // ---- Manual payment section ----
-    QGroupBox *manualGroup = new QGroupBox("Ручная оплата", this);
-    QVBoxLayout *manualLayout = new QVBoxLayout(manualGroup);
-
-    QLabel *linkLabel = new QLabel("Ссылка на оплату (единая для всех тарифов):", manualGroup);
-    m_linkEdit = new QLineEdit(manualGroup);
-    m_linkEdit->setPlaceholderText("https://www.tinkoff.ru/rm/...");
-
-    QPushButton *saveLinkBtn = new QPushButton("💾 Сохранить ссылку", manualGroup);
-    saveLinkBtn->setFixedWidth(180);
-
-    manualLayout->addWidget(linkLabel);
-    manualLayout->addWidget(m_linkEdit);
-    manualLayout->addWidget(saveLinkBtn, 0, Qt::AlignLeft);
-
-    root->addWidget(manualGroup);
-
-    // ---- Auto payment providers section ----
-    QGroupBox *autoGroup = new QGroupBox("Авто-оплата (провайдеры)", this);
-    QVBoxLayout *autoLayout = new QVBoxLayout(autoGroup);
-
-    QLabel *noteLabel = new QLabel(
-        "⚠️ Авто-оплата в разработке. Включите показ кнопки в Настройках.\n"
-        "Здесь можно заранее настроить ключи для будущей интеграции.",
-        autoGroup);
-    noteLabel->setStyleSheet("color: #f0a000; font-size: 12px;");
-    noteLabel->setWordWrap(true);
-    autoLayout->addWidget(noteLabel);
-
-    m_provTable = new QTableWidget(0, 5, autoGroup);
-    m_provTable->setHorizontalHeaderLabels({
-        "Вкл.", "Провайдер", "Ключ (API / Terminal Key)", "Пароль", "Описание"});
-    m_provTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-    m_provTable->setColumnWidth(0, 50);
-    m_provTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-    m_provTable->setColumnWidth(1, 120);
-    m_provTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
-    m_provTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::Fixed);
-    m_provTable->setColumnWidth(3, 140);
-    m_provTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::Fixed);
-    m_provTable->setColumnWidth(4, 200);
-    autoLayout->addWidget(m_provTable);
-
-    QPushButton *saveProvBtn = new QPushButton("💾 Сохранить провайдеры", autoGroup);
-    saveProvBtn->setFixedWidth(200);
-    autoLayout->addWidget(saveProvBtn, 0, Qt::AlignLeft);
-
-    root->addWidget(autoGroup);
-    root->addStretch();
-
-    connect(saveLinkBtn,  &QPushButton::clicked, this, &PaymentsPage::saveManualLink);
-    connect(saveProvBtn,  &QPushButton::clicked, this, &PaymentsPage::saveProviders);
-
-    loadValues();
+    LVCOLUMNW col = {};
+    col.mask = LVCF_TEXT | LVCF_WIDTH;
+    wchar_t c0[] = L"Провайдер"; col.cx = 130; col.pszText = c0; ListView_InsertColumn(lv, 0, &col);
+    wchar_t c1[] = L"Включён";   col.cx = 80;  col.pszText = c1; ListView_InsertColumn(lv, 1, &col);
+    wchar_t c2[] = L"API Key";   col.cx = 180; col.pszText = c2; ListView_InsertColumn(lv, 2, &col);
+    wchar_t c3[] = L"Terminal";  col.cx = 130; col.pszText = c3; ListView_InsertColumn(lv, 3, &col);
 }
 
-void PaymentsPage::showEvent(QShowEvent *event)
+static LRESULT CALLBACK PayWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    QWidget::showEvent(event);
-    loadValues();
+    PayCtx* ctx = reinterpret_cast<PayCtx*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+
+    switch (msg) {
+    case WM_CREATE: {
+        createLabel(hwnd, "Ссылка для ручной оплаты:", 20, 15, 250, 22);
+        HWND linkEd = createEdit(hwnd, IDC_PAY_LINK_EDIT, 20, 38, 500, 24);
+        setDefaultFont(linkEd);
+        HWND btnSaveLink = createButton(hwnd, "💾  Сохранить ссылку", IDC_PAY_LINK_SAVE, 20, 72, 190, 30);
+        setDefaultFont(btnSaveLink);
+
+        createLabel(hwnd, "Провайдеры автооплаты:", 20, 120, 240, 22);
+        HWND lv = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEW, L"",
+            WS_CHILD | WS_VISIBLE | LVS_REPORT | LVS_EDITLABELS,
+            20, 144, 560, 240,
+            hwnd, reinterpret_cast<HMENU>((UINT_PTR)IDC_PAY_PROV_LIST),
+            GetModuleHandleW(nullptr), nullptr);
+        ListView_SetExtendedListViewStyle(lv, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
+        setDefaultFont(lv);
+        initProvTable(lv);
+
+        HWND btnSaveProv = createButton(hwnd, "💾  Сохранить провайдеры", IDC_PAY_PROV_SAVE, 20, 400, 220, 30);
+        setDefaultFont(btnSaveProv);
+        return 0;
+    }
+    case WM_SHOWWINDOW:
+        if (wp && ctx)
+            PaymentsPage::loadValues(hwnd, ctx->config);
+        return 0;
+    case WM_COMMAND:
+        if (!ctx) break;
+        if (LOWORD(wp) == IDC_PAY_LINK_SAVE) {
+            ctx->config->setManualPayLink(getWindowText(GetDlgItem(hwnd, IDC_PAY_LINK_EDIT)));
+            ctx->config->save();
+            MessageBoxW(hwnd, L"Ссылка сохранена!", L"Neira Bot Panel", MB_OK | MB_ICONINFORMATION);
+        } else if (LOWORD(wp) == IDC_PAY_PROV_SAVE) {
+            HWND lv = GetDlgItem(hwnd, IDC_PAY_PROV_LIST);
+            int count = ListView_GetItemCount(lv);
+            auto providers = ctx->config->autoProviders();
+            wchar_t buf[256];
+            for (int i = 0; i < count && i < (int)providers.size(); ++i) {
+                ListView_GetItemText(lv, i, 1, buf, 256);
+                providers[i].enabled = (wcsncmp(buf, L"Да", 2) == 0);
+                ListView_GetItemText(lv, i, 2, buf, 256);
+                providers[i].apiKey = toUtf8(buf);
+                ListView_GetItemText(lv, i, 3, buf, 256);
+                providers[i].terminalKey = toUtf8(buf);
+            }
+            ctx->config->setAutoProviders(providers);
+            ctx->config->save();
+            MessageBoxW(hwnd, L"Провайдеры сохранены!", L"Neira Bot Panel", MB_OK | MB_ICONINFORMATION);
+        }
+        return 0;
+    case WM_DESTROY:
+        delete ctx;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-void PaymentsPage::loadValues()
+namespace PaymentsPage {
+
+bool registerClass(HINSTANCE hInst)
 {
-    m_linkEdit->setText(m_config->manualPayLink());
+    WNDCLASSEXW wc = {};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = PayWndProc;
+    wc.hInstance     = hInst;
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.lpszClassName = L"NeiraPagePayments";
+    return RegisterClassExW(&wc) != 0;
+}
 
-    const QList<AutoProviderConfig> &providers = m_config->autoProviders();
-    m_provTable->setRowCount(0);
-    for (const AutoProviderConfig &p : providers) {
-        int row = m_provTable->rowCount();
-        m_provTable->insertRow(row);
+HWND create(HWND parent, const RECT& rc, ConfigService* config)
+{
+    HWND hwnd = CreateWindowExW(0, L"NeiraPagePayments", L"",
+        WS_CHILD | WS_CLIPCHILDREN,
+        rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+        parent, nullptr, GetModuleHandleW(nullptr), nullptr);
+    auto* ctx = new PayCtx{ config };
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(ctx));
+    return hwnd;
+}
 
-        QCheckBox *cb = new QCheckBox(m_provTable);
-        cb->setChecked(p.enabled);
-        QWidget *cbWidget = new QWidget(m_provTable);
-        QHBoxLayout *cbLayout = new QHBoxLayout(cbWidget);
-        cbLayout->addWidget(cb);
-        cbLayout->setAlignment(Qt::AlignCenter);
-        cbLayout->setContentsMargins(0,0,0,0);
-        m_provTable->setCellWidget(row, 0, cbWidget);
+void loadValues(HWND hwnd, ConfigService* config)
+{
+    setWindowText(GetDlgItem(hwnd, IDC_PAY_LINK_EDIT), config->manualPayLink());
+    HWND lv = GetDlgItem(hwnd, IDC_PAY_PROV_LIST);
+    if (!lv) return;
+    ListView_DeleteAllItems(lv);
+    const auto& provs = config->autoProviders();
+    for (int i = 0; i < (int)provs.size(); ++i) {
+        const auto& p = provs[i];
+        LVITEMW item = {}; item.mask = LVIF_TEXT; item.iItem = i;
+        std::wstring name = toWide(p.displayName);
+        item.pszText = const_cast<wchar_t*>(name.c_str());
+        ListView_InsertItem(lv, &item);
 
-        auto mkItem = [](const QString &t) {
-            QTableWidgetItem *it = new QTableWidgetItem(t);
-            return it;
+        auto setCol = [&](int c, const std::wstring& t) {
+            wchar_t buf[256]; wcsncpy_s(buf, t.c_str(), _TRUNCATE);
+            ListView_SetItemText(lv, i, c, buf);
         };
-        m_provTable->setItem(row, 1, mkItem(p.displayName));
-        m_provTable->setItem(row, 2, mkItem(p.apiKey.isEmpty() ? p.terminalKey : p.apiKey));
-        m_provTable->setItem(row, 3, mkItem(p.password));
-        m_provTable->setItem(row, 4, mkItem(p.description));
+        setCol(1, p.enabled ? L"Да" : L"Нет");
+        setCol(2, toWide(p.apiKey));
+        setCol(3, toWide(p.terminalKey));
     }
 }
 
-void PaymentsPage::saveManualLink()
-{
-    m_config->setManualPayLink(m_linkEdit->text().trimmed());
-    m_config->save();
-    QMessageBox::information(this, "Сохранено", "Ссылка на оплату сохранена.");
-}
-
-void PaymentsPage::saveProviders()
-{
-    QList<AutoProviderConfig> providers = m_config->autoProviders();
-
-    for (int row = 0; row < m_provTable->rowCount() && row < providers.size(); ++row) {
-        QWidget *cbWidget = m_provTable->cellWidget(row, 0);
-        if (cbWidget) {
-            QCheckBox *cb = cbWidget->findChild<QCheckBox*>();
-            if (cb) providers[row].enabled = cb->isChecked();
-        }
-        if (m_provTable->item(row, 2)) {
-            // API Key and Terminal Key share the same UI column; save to both fields
-            const QString keyValue = m_provTable->item(row, 2)->text().trimmed();
-            providers[row].apiKey      = keyValue;
-            providers[row].terminalKey = keyValue;
-        }
-        if (m_provTable->item(row, 3))
-            providers[row].password = m_provTable->item(row, 3)->text().trimmed();
-    }
-
-    m_config->setAutoProviders(providers);
-    m_config->save();
-    QMessageBox::information(this, "Сохранено", "Настройки провайдеров сохранены.");
-}
+} // namespace PaymentsPage

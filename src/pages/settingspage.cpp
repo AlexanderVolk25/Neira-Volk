@@ -1,88 +1,96 @@
 #include "settingspage.h"
 
-#include <QVBoxLayout>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QPushButton>
-#include <QMessageBox>
-#include <QShowEvent>
-#include <QIntValidator>
+struct SettingsCtx { ConfigService* config; };
 
-SettingsPage::SettingsPage(ConfigService *config, QWidget *parent)
-    : QWidget(parent)
-    , m_config(config)
+static LRESULT CALLBACK SettingsWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 {
-    QVBoxLayout *root = new QVBoxLayout(this);
-    root->setContentsMargins(24, 24, 24, 24);
-    root->setSpacing(16);
+    SettingsCtx* ctx = reinterpret_cast<SettingsCtx*>(
+        GetWindowLongPtrW(hwnd, GWLP_USERDATA));
 
-    QLabel *title = new QLabel("⚙️ Settings", this);
-    title->setStyleSheet("font-size: 20px; font-weight: bold; color: #6ab0ff;");
-    root->addWidget(title);
+    switch (msg) {
+    case WM_CREATE: {
+        int y = 20, dy = 50;
+        auto row = [&](const std::string& label, UINT id) {
+            HWND lbl = createLabel(hwnd, label, 20, y, 220, 20);
+            setDefaultFont(lbl);
+            HWND ed  = createEdit(hwnd, id, 20, y + 22, 500, 24);
+            setDefaultFont(ed);
+            y += dy;
+        };
+        row("Токен бота:", IDC_SET_TOKEN_EDIT);
+        row("ID администратора:", IDC_SET_ADMIN_EDIT);
+        row("Username поддержки (без @):", IDC_SET_SUPPORT_EDIT);
+        row("Username канала (без @):", IDC_SET_CHANNEL_EDIT);
 
-    QGroupBox *group = new QGroupBox("Настройки бота", this);
-    QFormLayout *form = new QFormLayout(group);
-    form->setSpacing(12);
-    form->setLabelAlignment(Qt::AlignRight);
+        HWND chk = createCheckbox(hwnd, "Показывать онлайн-оплату", IDC_SET_AUTOPAY_CHK,
+                                   20, y, 260, 22);
+        setDefaultFont(chk);
+        y += 40;
 
-    m_tokenEdit = new QLineEdit(group);
-    m_tokenEdit->setPlaceholderText("1234567890:AABBccdd...");
-    m_tokenEdit->setEchoMode(QLineEdit::Password);
-
-    m_adminIdEdit = new QLineEdit(group);
-    m_adminIdEdit->setPlaceholderText("123456789");
-    m_adminIdEdit->setValidator(new QIntValidator(group));
-
-    m_supportEdit = new QLineEdit(group);
-    m_supportEdit->setPlaceholderText("username (без @)");
-
-    m_channelEdit = new QLineEdit(group);
-    m_channelEdit->setPlaceholderText("@mychannel или -100xxxxxx");
-
-    m_autoPayCheck = new QCheckBox("Показывать кнопку авто-оплаты пользователям", group);
-
-    form->addRow("Bot Token:",      m_tokenEdit);
-    form->addRow("Admin ID:",       m_adminIdEdit);
-    form->addRow("Support @:",      m_supportEdit);
-    form->addRow("Channel:",        m_channelEdit);
-    form->addRow("Авто-оплата:",    m_autoPayCheck);
-
-    root->addWidget(group);
-
-    QPushButton *saveBtn = new QPushButton("💾 Сохранить", this);
-    saveBtn->setFixedWidth(160);
-    root->addWidget(saveBtn, 0, Qt::AlignLeft);
-
-    root->addStretch();
-
-    connect(saveBtn, &QPushButton::clicked, this, &SettingsPage::saveSettings);
-
-    loadValues();
+        HWND btn = createButton(hwnd, "💾  Сохранить", IDC_SET_SAVE, 20, y, 140, 32);
+        setDefaultFont(btn);
+        return 0;
+    }
+    case WM_SHOWWINDOW:
+        if (wp && ctx)
+            SettingsPage::loadValues(hwnd, ctx->config);
+        return 0;
+    case WM_COMMAND:
+        if (LOWORD(wp) == IDC_SET_SAVE && ctx) {
+            ctx->config->setBotToken(getWindowText(GetDlgItem(hwnd, IDC_SET_TOKEN_EDIT)));
+            try {
+                ctx->config->setAdminId(std::stoll(
+                    getWindowText(GetDlgItem(hwnd, IDC_SET_ADMIN_EDIT))));
+            } catch (...) {}
+            ctx->config->setSupportUsername(getWindowText(GetDlgItem(hwnd, IDC_SET_SUPPORT_EDIT)));
+            ctx->config->setChannelUsername(getWindowText(GetDlgItem(hwnd, IDC_SET_CHANNEL_EDIT)));
+            ctx->config->setShowAutoPayment(
+                SendDlgItemMessageW(hwnd, IDC_SET_AUTOPAY_CHK, BM_GETCHECK, 0, 0) == BST_CHECKED);
+            ctx->config->save();
+            MessageBoxW(hwnd, L"Настройки сохранены!", L"Neira Bot Panel", MB_OK | MB_ICONINFORMATION);
+        }
+        return 0;
+    case WM_DESTROY:
+        delete ctx;
+        return 0;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-void SettingsPage::showEvent(QShowEvent *event)
+namespace SettingsPage {
+
+bool registerClass(HINSTANCE hInst)
 {
-    QWidget::showEvent(event);
-    loadValues();
+    WNDCLASSEXW wc = {};
+    wc.cbSize        = sizeof(wc);
+    wc.lpfnWndProc   = SettingsWndProc;
+    wc.hInstance     = hInst;
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
+    wc.lpszClassName = L"NeiraPageSettings";
+    return RegisterClassExW(&wc) != 0;
 }
 
-void SettingsPage::loadValues()
+HWND create(HWND parent, const RECT& rc, ConfigService* config)
 {
-    m_tokenEdit->setText(m_config->botToken());
-    m_adminIdEdit->setText(QString::number(m_config->adminId()));
-    m_supportEdit->setText(m_config->supportUsername());
-    m_channelEdit->setText(m_config->channelUsername());
-    m_autoPayCheck->setChecked(m_config->showAutoPayment());
+    HWND hwnd = CreateWindowExW(0, L"NeiraPageSettings", L"",
+        WS_CHILD | WS_CLIPCHILDREN,
+        rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
+        parent, nullptr, GetModuleHandleW(nullptr), nullptr);
+
+    auto* ctx = new SettingsCtx{ config };
+    SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(ctx));
+    return hwnd;
 }
 
-void SettingsPage::saveSettings()
+void loadValues(HWND hwnd, ConfigService* config)
 {
-    m_config->setBotToken(m_tokenEdit->text().trimmed());
-    m_config->setAdminId(m_adminIdEdit->text().toLongLong());
-    m_config->setSupportUsername(m_supportEdit->text().trimmed());
-    m_config->setChannelUsername(m_channelEdit->text().trimmed());
-    m_config->setShowAutoPayment(m_autoPayCheck->isChecked());
-    m_config->save();
-    QMessageBox::information(this, "Сохранено", "Настройки успешно сохранены.");
+    setWindowText(GetDlgItem(hwnd, IDC_SET_TOKEN_EDIT),   config->botToken());
+    setWindowText(GetDlgItem(hwnd, IDC_SET_ADMIN_EDIT),
+        config->adminId() ? std::to_string(config->adminId()) : "");
+    setWindowText(GetDlgItem(hwnd, IDC_SET_SUPPORT_EDIT), config->supportUsername());
+    setWindowText(GetDlgItem(hwnd, IDC_SET_CHANNEL_EDIT), config->channelUsername());
+    CheckDlgButton(hwnd, IDC_SET_AUTOPAY_CHK,
+        config->showAutoPayment() ? BST_CHECKED : BST_UNCHECKED);
 }
+
+} // namespace SettingsPage

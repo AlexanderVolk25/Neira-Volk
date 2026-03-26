@@ -1,10 +1,24 @@
+# Build artifacts
 build/
-CMakeCache.txt
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.exe
+
+# Visual Studio
+.vs/
 *.user
-moc_*
-*.pro.user
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# vcpkg downloaded packages (do not commit)
+vcpkg_installed/
+
+# Runtime data files (generated at runtime)
 config.json
 bot.db
-*.log
-CMakeFiles/
-cmake_install.cmake

@@ -1,47 +1,50 @@
 #pragma once
 
-#include <QObject>
-#include <QString>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QJsonObject>
-#include <QVector>
-#include <QPair>
+#include <string>
+#include <vector>
+#include <cstdint>
+#include <nlohmann/json.hpp>
 
-class TelegramApiClient : public QObject
+// Result of an HTTP POST to the Telegram Bot API
+struct ApiResponse {
+    bool ok       = false;
+    int  httpCode = 0;
+    nlohmann::json result;  // parsed "result" field when ok==true
+    std::string    raw;     // full response body
+};
+
+// A single inline-keyboard button: {text, callback_data or url}
+using BtnRow = std::vector<std::pair<std::string, std::string>>;
+
+class TelegramApiClient
 {
-    Q_OBJECT
 public:
-    explicit TelegramApiClient(QObject *parent = nullptr);
+    TelegramApiClient();
+    ~TelegramApiClient();
 
-    void setToken(const QString &token);
+    void setToken(const std::string& token);
 
-    QNetworkReply *getUpdates(int offset, int timeout = 25);
-    QNetworkReply *sendMessage(qint64 chatId, const QString &text,
-                               const QJsonObject &replyMarkup = QJsonObject());
-    QNetworkReply *sendMessageWithInlineKeyboard(
-        qint64 chatId,
-        const QString &text,
-        const QVector<QVector<QPair<QString,QString>>> &buttons);
-    QNetworkReply *sendPhoto(qint64 chatId, const QString &fileId,
-                             const QString &caption = QString());
-    QNetworkReply *sendDocument(qint64 chatId, const QString &fileId,
-                                const QString &caption = QString());
-    QNetworkReply *forwardMessage(qint64 chatId, qint64 fromChatId, int messageId);
-    QNetworkReply *answerCallbackQuery(const QString &callbackQueryId,
-                                       const QString &text = QString());
-    QNetworkReply *sendToChannel(const QString &channelId, const QString &text);
+    // All methods are synchronous (blocking) – call from a worker thread
+    ApiResponse getUpdates(int offset, int timeout = 25);
+    ApiResponse sendMessage(int64_t chatId, const std::string& text,
+                            const nlohmann::json& replyMarkup = {});
+    ApiResponse sendMessageWithInlineKeyboard(int64_t chatId,
+                                              const std::string& text,
+                                              const std::vector<BtnRow>& buttons);
+    ApiResponse sendPhoto(int64_t chatId, const std::string& fileId,
+                          const std::string& caption = {});
+    ApiResponse sendDocument(int64_t chatId, const std::string& fileId,
+                              const std::string& caption = {});
+    ApiResponse forwardMessage(int64_t chatId, int64_t fromChatId, int messageId);
+    ApiResponse answerCallbackQuery(const std::string& callbackQueryId,
+                                    const std::string& text = {});
+    ApiResponse sendToChannel(const std::string& channelId, const std::string& text);
 
-    static QJsonObject buildInlineKeyboardMarkup(
-        const QVector<QVector<QPair<QString,QString>>> &buttons);
-
-signals:
-    void networkError(const QString &errorText);
+    static nlohmann::json buildInlineKeyboardMarkup(const std::vector<BtnRow>& buttons);
 
 private:
-    QNetworkReply *post(const QString &method, const QJsonObject &params);
+    ApiResponse post(const std::string& method, const nlohmann::json& params);
 
-    QNetworkAccessManager *m_nam;
-    QString m_token;
-    QString m_baseUrl;
+    void*       m_hSession = nullptr;  // HINTERNET – void* to avoid including winhttp.h here
+    std::string m_token;
 };
