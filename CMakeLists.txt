@@ -7,7 +7,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Widgets Network Sql)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Network Sql)
 
 set(SOURCES
     src/main.cpp

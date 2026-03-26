@@ -4,27 +4,21 @@ A Telegram bot control panel built with Qt6 (C++), targeting Windows EXE.
 
 ## Prerequisites
 
-- Qt 6.4+ (with Widgets, Network, Sql modules)
-- CMake 3.21+
-- Visual Studio 2022 with MSVC (x64)
+- Qt6 (with Widgets, Network, Sql modules)
+- Visual Studio 2022 with MSVC (x64) and CMake tools component
 
 ## Build Steps
 
 1. Clone the repository:
    ```
    git clone <repo-url>
-   cd Neira-Volk
    ```
 
-2. Configure and build:
-   ```
-   mkdir build
-   cd build
-   cmake .. -G "Visual Studio 17 2022" -A x64
-   cmake --build . --config Release
-   ```
+2. Open Visual Studio 2022, choose **File → Open → Folder…** and select the cloned `Neira-Volk` folder.
 
-3. Find the executable at `build/Release/NeiraBotPanel.exe`.
+3. Visual Studio will automatically detect `CMakeLists.txt` and configure the project. Select the **x64-Release** configuration from the toolbar and press **Build → Build All** (or `Ctrl+Shift+B`).
+
+4. Find the executable at `out/build/x64-Release/NeiraBotPanel.exe`.
 
 ## Configuration
 
